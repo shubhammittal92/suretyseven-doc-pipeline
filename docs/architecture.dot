@@ -1,0 +1,35 @@
+digraph DocPipeline {
+  rankdir=TB;
+  graph [fontname="Helvetica", fontsize=12, labelloc="t",
+         label="SuretySeven — Document Processing Service"];
+  node  [fontname="Helvetica", fontsize=11, shape=box, style="rounded,filled",
+         fillcolor="#eef2ff", color="#6366f1", penwidth=1.4];
+  edge  [fontname="Helvetica", fontsize=9, color="#475569"];
+
+  ui   [label="Web UI\n(React + Vite)\nUpload · List · Detail · Dashboard", fillcolor="#e0f2fe", color="#0284c7"];
+  api  [label="API Layer\n(Express, REST)\nPOST /documents · GET /documents[/:id[/history]]\nGET /documents/stats", fillcolor="#dcfce7", color="#16a34a"];
+
+  subgraph cluster_app {
+    label="Monolithic backend (single deployable)";
+    style="rounded,dashed"; color="#94a3b8"; fontname="Helvetica"; fontsize=10;
+
+    docsvc [label="Document Service\nhash · dedup · shaping"];
+    worker [label="Async Worker\n(polls queue, claims row\nin a DB transaction)", fillcolor="#fef3c7", color="#d97706"];
+    proc   [label="Mock Processor\n(SUCCESS/TIMEOUT/\nERROR/INVALID_RESULT)"];
+    valid  [label="Validation / Rules\ncompanyName, regNo,\nrevenue>=0, date"];
+    retry  [label="Retry Policy\ntransient -> re-queue\n(max attempts)", fillcolor="#fef3c7", color="#d97706"];
+  }
+
+  db   [label="Database\n(Postgres in Docker /\nSQLite in dev)\ndocuments + document_history", shape=cylinder, fillcolor="#f1f5f9", color="#334155"];
+
+  ui   -> api  [label="HTTPS / JSON"];
+  api  -> docsvc;
+  docsvc -> db [label="insert UPLOADED\n+ history"];
+  db   -> worker [label="claim next\n(UPLOADED)"];
+  worker -> proc;
+  proc -> valid [label="on SUCCESS"];
+  valid -> db  [label="PROCESSED /\nFAILED(validation)"];
+  proc -> retry [label="TIMEOUT / ERROR"];
+  retry -> db  [label="re-queue as\nUPLOADED / FAILED"];
+  api  -> db   [label="reads: get / list /\nhistory / stats"];
+}
